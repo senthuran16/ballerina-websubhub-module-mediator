@@ -20,6 +20,7 @@ package org.example;
 
 import io.ballerina.runtime.api.Module;
 import io.ballerina.runtime.api.Runtime;
+import io.ballerina.runtime.api.async.Callback; // TODO For Old JDK versions
 import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.utils.JsonUtils;
 import io.ballerina.runtime.api.utils.StringUtils;
@@ -29,8 +30,8 @@ import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
 import io.ballerina.runtime.api.values.BXml;
 import org.apache.axiom.om.OMElement;
-import org.apache.synapse.data.connector.ConnectorResponse;
-import org.apache.synapse.data.connector.DefaultConnectorResponse;
+//import org.apache.synapse.data.connector.ConnectorResponse;
+//import org.apache.synapse.data.connector.DefaultConnectorResponse;
 import org.example.ballerina.stdlib.mi.ModuleInfo;
 import org.example.ballerina.stdlib.mi.BXmlConverter;
 import org.example.ballerina.stdlib.mi.Constants;
@@ -43,6 +44,7 @@ import org.apache.synapse.mediators.template.TemplateContext;
 
 import java.util.Objects;
 import java.util.Stack;
+import java.util.concurrent.CountDownLatch;
 
 import static org.example.ballerina.stdlib.mi.Constants.BOOLEAN;
 import static org.example.ballerina.stdlib.mi.Constants.DECIMAL;
@@ -76,35 +78,80 @@ public class BallerinaWebSubHubWrapperMediator extends AbstractMediator {
         return lookupTemplateParameter(context, Constants.RESPONSE_VARIABLE).toString();
     }
 
+    // TODO Experimenting: Java17 - https://github.com/wso2-extensions/ballerina-mi-module-gen-tool/blob/c79553122812f84963668c52b06acf7dadbdddfe/native/src/main/java/io/ballerina/stdlib/mi/Mediator.java
     public boolean mediate(MessageContext context) {
         String balFunctionReturnType = context.getProperty(Constants.RETURN_TYPE).toString();
+        final CountDownLatch latch = new CountDownLatch(1);
+        Callback returnCallback = new Callback() {
+            public void notifySuccess(Object result) {
+                Object res = result;
+                if (Objects.equals(balFunctionReturnType, XML)) {
+                    res = BXmlConverter.toOMElement((BXml) result);
+                } else if (Objects.equals(balFunctionReturnType, DECIMAL)) {
+                    res = ((BDecimal) result).value().toString();
+                } else if (Objects.equals(balFunctionReturnType, STRING)) {
+                    res = ((BString) res).getValue();
+                } else if (result instanceof BMap) {
+                    res = result.toString();
+                }
+                System.out.println(">>>>>>>>>> RESULT: " + res.getClass() + " - " + res.toString());
+//                ConnectorResponse connectorResponse = new DefaultConnectorResponse();
+//                connectorResponse.setPayload(result);
+//                context.setProperty(getResultProperty(context) + ".payload", connectorResponse.getPayload());
+//                context.setProperty(getResultProperty(context) + ".payload", result);
+                context.setProperty(getResultProperty(context) + ".payload", res);
+                latch.countDown();
+            }
+
+            public void notifyFailure(BError result) {
+                handleException(result.getMessage(), context);
+                latch.countDown();
+            }
+        };
+
         Object[] args = new Object[Integer.parseInt(context.getProperty(Constants.SIZE).toString())];
         if (!setParameters(args, context)) {
             return false;
         }
+        rt.invokeMethodAsync(context.getProperty(Constants.FUNCTION_NAME).toString(), returnCallback, args);
         try {
-            Object result = rt.callFunction(module, context.getProperty(Constants.FUNCTION_NAME).toString(), null, args);
-            if (Objects.equals(balFunctionReturnType, XML)) {
-                result = BXmlConverter.toOMElement((BXml) result);
-            } else if (Objects.equals(balFunctionReturnType, DECIMAL)) {
-                result = ((BDecimal) result).value().toString();
-            } else if (Objects.equals(balFunctionReturnType, STRING)) {
-                result = ((BString) result).getValue();
-            } else if (result instanceof BMap) {
-                result = result.toString();
-            }
-            System.out.println(">>>>>>>>>> RESULT: " + result.getClass() + " - " + result.toString());
-
-            ConnectorResponse connectorResponse = new DefaultConnectorResponse();
-            connectorResponse.setPayload(result);
-            context.setProperty(getResultProperty(context) + ".payload", connectorResponse.getPayload());
-//            context.setProperty(getResultProperty(context), connectorResponse);
-//            context.setVariable(getResultProperty(context), null); // TODO SENTHURAN - Temporary. Get rid of this
-        } catch (BError bError) {
-            handleException(bError.getMessage(), context);
+            latch.await();
+        } catch (InterruptedException e) {
+            log.error(e.getMessage());
         }
         return true;
     }
+
+    // TODO 2201.11.0 - JAVA 21 - WORKS
+//    public boolean mediate_2201_11_0(MessageContext context) {
+//        String balFunctionReturnType = context.getProperty(Constants.RETURN_TYPE).toString();
+//        Object[] args = new Object[Integer.parseInt(context.getProperty(Constants.SIZE).toString())];
+//        if (!setParameters(args, context)) {
+//            return false;
+//        }
+//        try {
+//            Object result = rt.callFunction(module, context.getProperty(Constants.FUNCTION_NAME).toString(), null, args); // TODO WORKED IN 2201.11.0
+//            if (Objects.equals(balFunctionReturnType, XML)) {
+//                result = BXmlConverter.toOMElement((BXml) result);
+//            } else if (Objects.equals(balFunctionReturnType, DECIMAL)) {
+//                result = ((BDecimal) result).value().toString();
+//            } else if (Objects.equals(balFunctionReturnType, STRING)) {
+//                result = ((BString) result).getValue();
+//            } else if (result instanceof BMap) {
+//                result = result.toString();
+//            }
+//            System.out.println(">>>>>>>>>> RESULT: " + result.getClass() + " - " + result.toString());
+//
+//            ConnectorResponse connectorResponse = new DefaultConnectorResponse();
+//            connectorResponse.setPayload(result);
+//            context.setProperty(getResultProperty(context) + ".payload", connectorResponse.getPayload());
+////            context.setProperty(getResultProperty(context), connectorResponse);
+////            context.setVariable(getResultProperty(context), null); // TODO SENTHURAN - Temporary. Get rid of this
+//        } catch (BError bError) {
+//            handleException(bError.getMessage(), context);
+//        }
+//        return true;
+//    }
 
     private boolean setParameters(Object[] args, MessageContext context) {
         for (int i = 0; i < args.length; i++) {
@@ -179,12 +226,27 @@ public class BallerinaWebSubHubWrapperMediator extends AbstractMediator {
     }
 
     private void init(ModuleInfo moduleInfo) { // TODO INIT CONSOLIDATOR FIRST
-        System.out.println(">>>>>>>>>>>>>>>>>> BallerinaWebSubMediator init");
-        module = new Module(moduleInfo.getOrgName(), moduleInfo.getModuleName(), moduleInfo.getModuleVersion());
-        module = new Module("wso2", "kafkaHub", "0");
-        rt = Runtime.from(module);
-        rt.init();
-        rt.start();
+        try { // TODO Remove this big try catch block
+            System.out.println(">>>>>>>>>>>>>>>>>> BallerinaWebSubMediator init");
+            Class mqFactoryClass = Class.forName("com.ibm.mq.jms.MQQueueConnectionFactory");
+            Class jmsInterfaceClass = Class.forName("javax.jms.ConnectionFactory");
+
+            System.out.println(">>>>>>>>>>>>>>>>>> [DEBUG] MQQueueConnectionFactory classloader: " +
+                    mqFactoryClass.getClassLoader());
+            System.out.println(">>>>>>>>>>>>>>>>>> [DEBUG] ConnectionFactory classloader:       " +
+                    jmsInterfaceClass.getClassLoader());
+
+            module = new Module(moduleInfo.getOrgName(), moduleInfo.getModuleName(), moduleInfo.getModuleVersion());
+//        module = new Module("wso2", "kafkaHub", "0"); // TODO KAFKA HUB
+            module = new Module("wso2", "jmshub", "0");
+            rt = Runtime.from(module);
+            rt.init();
+            rt.start();
+        } catch (Exception e) {
+            System.err.println(">>>>>>>>>>>>>>>>>> Error initializing BallerinaWebSubHubWrapperMediator: " +
+                    e.getMessage());
+            e.printStackTrace();
+        }
     }
 
 //    private void initConsolidator() {
