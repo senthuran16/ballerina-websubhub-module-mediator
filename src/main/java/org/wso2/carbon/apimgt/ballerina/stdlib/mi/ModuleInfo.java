@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package org.example.ballerina.stdlib.mi;
+package org.wso2.carbon.apimgt.ballerina.stdlib.mi;
 
 public class ModuleInfo {
 //    private String ballerinaOrgName = "BALLERINA_ORG_NAME";

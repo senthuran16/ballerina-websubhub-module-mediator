@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package org.example;
+package org.wso2.carbon.apimgt;
 
 import io.ballerina.runtime.api.Module;
 import io.ballerina.runtime.api.Runtime;
@@ -35,9 +35,9 @@ import io.ballerina.runtime.internal.types.BStringType;
 import org.apache.axiom.om.OMElement;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.example.ballerina.stdlib.mi.BXmlConverter;
-import org.example.ballerina.stdlib.mi.Constants;
-import org.example.ballerina.stdlib.mi.OMElementConverter;
+import org.wso2.carbon.apimgt.ballerina.stdlib.mi.BXmlConverter;
+import org.wso2.carbon.apimgt.ballerina.stdlib.mi.Constants;
+import org.wso2.carbon.apimgt.ballerina.stdlib.mi.OMElementConverter;
 import org.apache.synapse.MessageContext;
 import org.apache.synapse.mediators.AbstractMediator;
 import org.wso2.carbon.apimgt.impl.dto.WebSubHubConfig;
@@ -51,13 +51,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 
-import static org.example.ballerina.stdlib.mi.Constants.BOOLEAN;
-import static org.example.ballerina.stdlib.mi.Constants.DECIMAL;
-import static org.example.ballerina.stdlib.mi.Constants.FLOAT;
-import static org.example.ballerina.stdlib.mi.Constants.INT;
-import static org.example.ballerina.stdlib.mi.Constants.JSON;
-import static org.example.ballerina.stdlib.mi.Constants.STRING;
-import static org.example.ballerina.stdlib.mi.Constants.XML;
+import static org.wso2.carbon.apimgt.ballerina.stdlib.mi.Constants.BOOLEAN;
+import static org.wso2.carbon.apimgt.ballerina.stdlib.mi.Constants.DECIMAL;
+import static org.wso2.carbon.apimgt.ballerina.stdlib.mi.Constants.FLOAT;
+import static org.wso2.carbon.apimgt.ballerina.stdlib.mi.Constants.INT;
+import static org.wso2.carbon.apimgt.ballerina.stdlib.mi.Constants.JSON;
+import static org.wso2.carbon.apimgt.ballerina.stdlib.mi.Constants.STRING;
+import static org.wso2.carbon.apimgt.ballerina.stdlib.mi.Constants.XML;
 
 public class BallerinaWebSubHubWrapperMediator extends AbstractMediator {
     private static final Log log = LogFactory.getLog(BallerinaWebSubHubWrapperMediator.class);
@@ -246,18 +246,16 @@ public class BallerinaWebSubHubWrapperMediator extends AbstractMediator {
                         " , name: " + module.getName() + " , majorVersion: " + module.getMajorVersion());
             }
 
+            // Load the configurations
             List<VariableKey> configKeysList = new ArrayList<>();
             String configContent = populateAndGetConfigContent(hub, webSubHubConfig.getHubProperties(), configKeysList);
-            if (log.isDebugEnabled()) {
-                log.debug("Ballerina WebSub Hub config content: \n" + configContent);
-            }
-
             Map<Module, VariableKey[]> configData = new HashMap<>();
             VariableKey[] configKeys = configKeysList.toArray(new VariableKey[0]);
             LaunchUtils.addModuleConfigData(configData, module, configKeys);
             LaunchUtils.initConfigurableVariables(
                     module, configData, new String[0], new Path[0], configContent.toString());
 
+            // Start the runtime
             rt = Runtime.from(module);
             rt.init();
             rt.start();

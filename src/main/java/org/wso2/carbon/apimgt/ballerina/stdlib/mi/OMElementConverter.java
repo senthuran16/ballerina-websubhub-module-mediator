@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package org.example.ballerina.stdlib.mi;
+package org.wso2.carbon.apimgt.ballerina.stdlib.mi;
 
 import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.utils.StringUtils;
