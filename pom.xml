@@ -21,6 +21,7 @@
         <carbonModuleCoreVersion>1.0.2</carbonModuleCoreVersion>
         <axis2Version>1.6.1-wso2v63</axis2Version>
         <synapseVersion>4.0.0-wso2v215</synapseVersion>
+        <carbon.apimgt.version>9.28.116.334</carbon.apimgt.version>
     </properties>
 
     <dependencies>
@@ -58,6 +59,11 @@
             <groupId>org.apache.synapse</groupId>
             <artifactId>synapse-core</artifactId>
             <version>${synapseVersion}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.wso2.carbon.apimgt</groupId>
+            <artifactId>org.wso2.carbon.apimgt.impl</artifactId>
+            <version>${carbon.apimgt.version}</version>
         </dependency>
         <dependency>
             <groupId>org.testng</groupId>

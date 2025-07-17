@@ -20,7 +20,7 @@ package org.example;
 
 import io.ballerina.runtime.api.Module;
 import io.ballerina.runtime.api.Runtime;
-import io.ballerina.runtime.api.async.Callback; // TODO For Old JDK versions
+import io.ballerina.runtime.api.async.Callback;
 import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.utils.JsonUtils;
 import io.ballerina.runtime.api.utils.StringUtils;
@@ -29,21 +29,26 @@ import io.ballerina.runtime.api.values.BError;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
 import io.ballerina.runtime.api.values.BXml;
+import io.ballerina.runtime.internal.configurable.VariableKey;
+import io.ballerina.runtime.internal.launch.LaunchUtils;
+import io.ballerina.runtime.internal.types.BStringType;
 import org.apache.axiom.om.OMElement;
-//import org.apache.synapse.data.connector.ConnectorResponse;
-//import org.apache.synapse.data.connector.DefaultConnectorResponse;
-import org.example.ballerina.stdlib.mi.ModuleInfo;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.example.ballerina.stdlib.mi.BXmlConverter;
 import org.example.ballerina.stdlib.mi.Constants;
 import org.example.ballerina.stdlib.mi.OMElementConverter;
-//import org.apache.synapse.data.connector.ConnectorResponse;
-//import org.apache.synapse.data.connector.DefaultConnectorResponse;
 import org.apache.synapse.MessageContext;
 import org.apache.synapse.mediators.AbstractMediator;
-import org.apache.synapse.mediators.template.TemplateContext;
+import org.wso2.carbon.apimgt.impl.dto.WebSubHubConfig;
+import org.wso2.carbon.apimgt.impl.internal.ServiceReferenceHolder;
 
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
-import java.util.Stack;
 import java.util.concurrent.CountDownLatch;
 
 import static org.example.ballerina.stdlib.mi.Constants.BOOLEAN;
@@ -55,6 +60,8 @@ import static org.example.ballerina.stdlib.mi.Constants.STRING;
 import static org.example.ballerina.stdlib.mi.Constants.XML;
 
 public class BallerinaWebSubHubWrapperMediator extends AbstractMediator {
+    private static final Log log = LogFactory.getLog(BallerinaWebSubHubWrapperMediator.class);
+
     private static volatile Runtime rt = null;
     private static Module module = null;
 
@@ -62,23 +69,16 @@ public class BallerinaWebSubHubWrapperMediator extends AbstractMediator {
         if (rt == null) {
             synchronized (BallerinaWebSubHubWrapperMediator.class) {
                 if (rt == null) {
-                    ModuleInfo moduleInfo = new ModuleInfo();
-                    init(moduleInfo);
+                    init();
                 }
             }
         }
-    }
-
-    // This constructor is added to test the mediator
-    public BallerinaWebSubHubWrapperMediator(ModuleInfo moduleInfo) {
-        init(moduleInfo);
     }
 
     private static String getResultProperty(MessageContext context) {
         return lookupTemplateParameter(context, Constants.RESPONSE_VARIABLE).toString();
     }
 
-    // TODO Experimenting: Java17 - https://github.com/wso2-extensions/ballerina-mi-module-gen-tool/blob/c79553122812f84963668c52b06acf7dadbdddfe/native/src/main/java/io/ballerina/stdlib/mi/Mediator.java
     public boolean mediate(MessageContext context) {
         String balFunctionReturnType = context.getProperty(Constants.RETURN_TYPE).toString();
         final CountDownLatch latch = new CountDownLatch(1);
@@ -94,12 +94,16 @@ public class BallerinaWebSubHubWrapperMediator extends AbstractMediator {
                 } else if (result instanceof BMap) {
                     res = result.toString();
                 }
-                System.out.println(">>>>>>>>>> RESULT: " + res.getClass() + " - " + res.toString());
+                if (log.isDebugEnabled()) {
+                    log.debug("mediate returned successful result. Class: " + res.getClass() +
+                            " , Result: " + res.toString());
+                }
 //                ConnectorResponse connectorResponse = new DefaultConnectorResponse();
 //                connectorResponse.setPayload(result);
 //                context.setProperty(getResultProperty(context) + ".payload", connectorResponse.getPayload());
 //                context.setProperty(getResultProperty(context) + ".payload", result);
                 context.setProperty(getResultProperty(context) + ".payload", res);
+
                 latch.countDown();
             }
 
@@ -121,37 +125,6 @@ public class BallerinaWebSubHubWrapperMediator extends AbstractMediator {
         }
         return true;
     }
-
-    // TODO 2201.11.0 - JAVA 21 - WORKS
-//    public boolean mediate_2201_11_0(MessageContext context) {
-//        String balFunctionReturnType = context.getProperty(Constants.RETURN_TYPE).toString();
-//        Object[] args = new Object[Integer.parseInt(context.getProperty(Constants.SIZE).toString())];
-//        if (!setParameters(args, context)) {
-//            return false;
-//        }
-//        try {
-//            Object result = rt.callFunction(module, context.getProperty(Constants.FUNCTION_NAME).toString(), null, args); // TODO WORKED IN 2201.11.0
-//            if (Objects.equals(balFunctionReturnType, XML)) {
-//                result = BXmlConverter.toOMElement((BXml) result);
-//            } else if (Objects.equals(balFunctionReturnType, DECIMAL)) {
-//                result = ((BDecimal) result).value().toString();
-//            } else if (Objects.equals(balFunctionReturnType, STRING)) {
-//                result = ((BString) result).getValue();
-//            } else if (result instanceof BMap) {
-//                result = result.toString();
-//            }
-//            System.out.println(">>>>>>>>>> RESULT: " + result.getClass() + " - " + result.toString());
-//
-//            ConnectorResponse connectorResponse = new DefaultConnectorResponse();
-//            connectorResponse.setPayload(result);
-//            context.setProperty(getResultProperty(context) + ".payload", connectorResponse.getPayload());
-////            context.setProperty(getResultProperty(context), connectorResponse);
-////            context.setVariable(getResultProperty(context), null); // TODO SENTHURAN - Temporary. Get rid of this
-//        } catch (BError bError) {
-//            handleException(bError.getMessage(), context);
-//        }
-//        return true;
-//    }
 
     private boolean setParameters(Object[] args, MessageContext context) {
         for (int i = 0; i < args.length; i++) {
@@ -210,10 +183,6 @@ public class BallerinaWebSubHubWrapperMediator extends AbstractMediator {
     }
 
     public static Object lookupTemplateParameter(MessageContext ctx, String paramName) {
-//        Stack funcStack = (Stack) ctx.getProperty(Constants.SYNAPSE_FUNCTION_STACK);
-//        TemplateContext currentFuncHolder = (TemplateContext) funcStack.peek();
-//        return currentFuncHolder.getParameterValue(paramName);
-
         return ctx.getProperty(paramName);
     }
 
@@ -225,37 +194,115 @@ public class BallerinaWebSubHubWrapperMediator extends AbstractMediator {
         }
     }
 
-    private void init(ModuleInfo moduleInfo) { // TODO INIT CONSOLIDATOR FIRST
-        try { // TODO Remove this big try catch block
-            System.out.println(">>>>>>>>>>>>>>>>>> BallerinaWebSubMediator init");
-            Class mqFactoryClass = Class.forName("com.ibm.mq.jms.MQQueueConnectionFactory");
-            Class jmsInterfaceClass = Class.forName("javax.jms.ConnectionFactory");
+    private Module getModule(String hub) {
+        if ("jms".equals(hub)) {
+            return new Module("wso2", "jmshub", "0");
+        }
+        return null;
+    }
 
-            System.out.println(">>>>>>>>>>>>>>>>>> [DEBUG] MQQueueConnectionFactory classloader: " +
-                    mqFactoryClass.getClassLoader());
-            System.out.println(">>>>>>>>>>>>>>>>>> [DEBUG] ConnectionFactory classloader:       " +
-                    jmsInterfaceClass.getClassLoader());
+    private Module getVariableKeyModule(String hub) {
+        if ("jms".equals(hub)) {
+            return new Module("wso2", "jmshub.config", "0");
+        }
+        return null;
+    }
 
-            module = new Module(moduleInfo.getOrgName(), moduleInfo.getModuleName(), moduleInfo.getModuleVersion());
-//        module = new Module("wso2", "kafkaHub", "0"); // TODO KAFKA HUB
-            module = new Module("wso2", "jmshub", "0");
-            rt = Runtime.from(module);
-            rt.init();
-            rt.start();
-        } catch (Exception e) {
-            System.err.println(">>>>>>>>>>>>>>>>>> Error initializing BallerinaWebSubHubWrapperMediator: " +
-                    e.getMessage());
-            e.printStackTrace();
+    private String populateAndGetConfigContent(String hub, Map<String, Object> hubProperties,
+                                               List<VariableKey> configKeyList) {
+        if ("jms".equals(hub)) {
+            StringBuilder configContent = new StringBuilder();
+            configContent.append("[wso2.jmshub]\n");
+            for (Map.Entry<String, Object> propertyEntry : hubProperties.entrySet()) {
+                configKeyList.add(
+                        new VariableKey(getVariableKeyModule(hub), propertyEntry.getKey(),
+                                new BStringType("string", module), false));
+                configContent.append(propertyEntry.getKey())
+                        .append(" = \"")
+                        .append(propertyEntry.getValue())
+                        .append("\"\n");
+            }
+            return configContent.toString();
+        } else {
+            // TODO Handle other hubs
+            return "";
         }
     }
 
-//    private void initConsolidator() {
-//        Module consolidatorModule = new Module("wso2", "consolidator", "0");
-//        Runtime consolidatorRuntime = Runtime.from(consolidatorModule);
-//        consolidatorRuntime.init();
-//        consolidatorRuntime.start();
-//
-//        // Hardcode and mention the function stuff
-//        consolidatorRuntime.rt.callFunction(consolidatorModule, "initConsolidator", null, new Object[] {});
-//    }
+
+
+    private void init() {
+        try {
+            WebSubHubConfig webSubHubConfig = ServiceReferenceHolder.getInstance().getAPIManagerConfigurationService()
+                    .getAPIManagerConfiguration().getWebSubHubConfig();
+            if (webSubHubConfig == null || !webSubHubConfig.isEnabled()) {
+                log.error("WebSub Hub is not enabled, hence not initializing the mediator.");
+                return;
+            }
+            String hub = webSubHubConfig.getHub();
+            module = getModule(hub);
+            if (log.isDebugEnabled()) {
+                log.debug("Initializing configured Ballerina WebSub Hub module - org: " + module.getOrg() +
+                        " , name: " + module.getName() + " , majorVersion: " + module.getMajorVersion());
+            }
+
+            List<VariableKey> configKeysList = new ArrayList<>();
+            String configContent = populateAndGetConfigContent(hub, webSubHubConfig.getHubProperties(), configKeysList);
+            if (log.isDebugEnabled()) {
+                log.debug("Ballerina WebSub Hub config content: \n" + configContent);
+            }
+
+            Map<Module, VariableKey[]> configData = new HashMap<>();
+            VariableKey[] configKeys = configKeysList.toArray(new VariableKey[0]);
+            LaunchUtils.addModuleConfigData(configData, module, configKeys);
+            LaunchUtils.initConfigurableVariables(
+                    module, configData, new String[0], new Path[0], configContent.toString());
+
+            rt = Runtime.from(module);
+            rt.init();
+            rt.start();
+            if (log.isDebugEnabled()) {
+                log.debug("Started the Ballerina runtime from module: " + module);
+            }
+            initHub();
+        } catch (Exception e) {
+            log.error("Failed to initialize the WebSub Hub", e);
+        }
+    }
+
+    private void initHub() {
+        String balFunctionReturnType = "json";
+        final CountDownLatch latch = new CountDownLatch(1);
+        Callback returnCallback = new Callback() {
+            public void notifySuccess(Object result) {
+                Object res = result;
+                if (Objects.equals(balFunctionReturnType, XML)) {
+                    res = BXmlConverter.toOMElement((BXml) result);
+                } else if (Objects.equals(balFunctionReturnType, DECIMAL)) {
+                    res = ((BDecimal) result).value().toString();
+                } else if (Objects.equals(balFunctionReturnType, STRING)) {
+                    // TODO Is this the expected one? - optimize
+                    res = ((BString) res).getValue();
+                } else if (result instanceof BMap) {
+                    // TODO Is this the expected one? - optimize
+                    res = result.toString();
+                }
+                log.info("WebSub Hub initialized successfully. " + res);
+                System.out.println("WebSub Hub initialized successfully. " + res);
+                latch.countDown();
+            }
+
+            public void notifyFailure(BError result) {
+                log.error("WebSub Hub initialization failed. " + result.getMessage());
+                latch.countDown();
+            }
+        };
+
+        rt.invokeMethodAsync("init", returnCallback, new Object[0]);
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            log.error(e.getMessage());
+        }
+    }
 }
