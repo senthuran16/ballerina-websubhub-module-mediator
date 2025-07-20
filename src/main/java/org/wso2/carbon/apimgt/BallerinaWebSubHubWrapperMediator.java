@@ -31,7 +31,6 @@ import io.ballerina.runtime.api.values.BString;
 import io.ballerina.runtime.api.values.BXml;
 import io.ballerina.runtime.internal.configurable.VariableKey;
 import io.ballerina.runtime.internal.launch.LaunchUtils;
-import io.ballerina.runtime.internal.types.BStringType;
 import org.apache.axiom.om.OMElement;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -44,9 +43,7 @@ import org.wso2.carbon.apimgt.impl.dto.WebSubHubConfig;
 import org.wso2.carbon.apimgt.impl.internal.ServiceReferenceHolder;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
@@ -194,43 +191,6 @@ public class BallerinaWebSubHubWrapperMediator extends AbstractMediator {
         }
     }
 
-    private Module getModule(String hub) {
-        if ("jms".equals(hub)) {
-            return new Module("wso2", "jmshub", "0");
-        }
-        return null;
-    }
-
-    private Module getVariableKeyModule(String hub) {
-        if ("jms".equals(hub)) {
-            return new Module("wso2", "jmshub.config", "0");
-        }
-        return null;
-    }
-
-    private String populateAndGetConfigContent(String hub, Map<String, Object> hubProperties,
-                                               List<VariableKey> configKeyList) {
-        if ("jms".equals(hub)) {
-            StringBuilder configContent = new StringBuilder();
-            configContent.append("[wso2.jmshub]\n");
-            for (Map.Entry<String, Object> propertyEntry : hubProperties.entrySet()) {
-                configKeyList.add(
-                        new VariableKey(getVariableKeyModule(hub), propertyEntry.getKey(),
-                                new BStringType("string", module), false));
-                configContent.append(propertyEntry.getKey())
-                        .append(" = \"")
-                        .append(propertyEntry.getValue())
-                        .append("\"\n");
-            }
-            return configContent.toString();
-        } else {
-            // TODO Handle other hubs
-            return "";
-        }
-    }
-
-
-
     private void init() {
         try {
             WebSubHubConfig webSubHubConfig = ServiceReferenceHolder.getInstance().getAPIManagerConfigurationService()
@@ -239,21 +199,22 @@ public class BallerinaWebSubHubWrapperMediator extends AbstractMediator {
                 log.error("WebSub Hub is not enabled, hence not initializing the mediator.");
                 return;
             }
+
             String hub = webSubHubConfig.getHub();
-            module = getModule(hub);
-            if (log.isDebugEnabled()) {
-                log.debug("Initializing configured Ballerina WebSub Hub module - org: " + module.getOrg() +
-                        " , name: " + module.getName() + " , majorVersion: " + module.getMajorVersion());
+            AbstractWebSubHubModuleHolder moduleHolder = WebSubModuleHolderResolver.resolveWebSubHubModuleHolder(hub);
+            if (moduleHolder == null) {
+                log.error("WebSub Hub module holder is not found for the hub: " + hub);
+                return;
             }
+            moduleHolder.init(webSubHubConfig.getHubProperties());
+            module = moduleHolder.getModule();
 
             // Load the configurations
-            List<VariableKey> configKeysList = new ArrayList<>();
-            String configContent = populateAndGetConfigContent(hub, webSubHubConfig.getHubProperties(), configKeysList);
             Map<Module, VariableKey[]> configData = new HashMap<>();
-            VariableKey[] configKeys = configKeysList.toArray(new VariableKey[0]);
+            VariableKey[] configKeys = moduleHolder.getConfigKeysList().toArray(new VariableKey[0]);
             LaunchUtils.addModuleConfigData(configData, module, configKeys);
             LaunchUtils.initConfigurableVariables(
-                    module, configData, new String[0], new Path[0], configContent.toString());
+                    module, configData, new String[0], new Path[0], moduleHolder.getConfigContent());
 
             // Start the runtime
             rt = Runtime.from(module);
@@ -279,10 +240,8 @@ public class BallerinaWebSubHubWrapperMediator extends AbstractMediator {
                 } else if (Objects.equals(balFunctionReturnType, DECIMAL)) {
                     res = ((BDecimal) result).value().toString();
                 } else if (Objects.equals(balFunctionReturnType, STRING)) {
-                    // TODO Is this the expected one? - optimize
                     res = ((BString) res).getValue();
                 } else if (result instanceof BMap) {
-                    // TODO Is this the expected one? - optimize
                     res = result.toString();
                 }
                 log.info("WebSub Hub initialized successfully. " + res);

@@ -12,11 +12,7 @@
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-<!--        <ballerinaLangVersion>2201.11.0</ballerinaLangVersion>--> <!-- TODO WORKS WITH APIM 4.5.0 - JAVA 21 -->
-
-<!--        <ballerinaLangVersion>2201.10.0</ballerinaLangVersion> &lt;!&ndash; TODO JAVA 17 &ndash;&gt;-->
-        <ballerinaLangVersion>2201.10.5</ballerinaLangVersion> <!-- TODO JAVA 17 -->
-<!--        <ballerinaLangVersion>2201.7.0</ballerinaLangVersion> &lt;!&ndash; TODO JAVA 11 &ndash;&gt;-->
+        <ballerinaLangVersion>2201.10.5</ballerinaLangVersion>
         <axiomVersion>1.2.22</axiomVersion>
         <carbonModuleCoreVersion>1.0.2</carbonModuleCoreVersion>
         <axis2Version>1.6.1-wso2v63</axis2Version>
